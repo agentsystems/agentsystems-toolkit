@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pre-commit
+          pip install -r requirements-dev.txt
+
+      - name: Run pre-commit (all files)
+        run: pre-commit run --all-files --show-diff-on-failure
+
+      - name: Install package (editable)
+        run: pip install -e .
+
+      - name: Smoke test import
+        run: |
+          python - <<'PY'
+          import agentsystems_toolkit
+          print(f"AgentSystems Toolkit version: {agentsystems_toolkit.__version__}")
+          
+          # Test basic import without LangChain dependencies
+          from agentsystems_toolkit.models.router import list_available_models, validate_model_dependencies
+          print("✅ Core imports successful")
+          PY
+
+      - name: Test with LangChain (optional dependencies)
+        run: |
+          pip install -e .[langchain]
+          python - <<'PY'
+          # Test that getModel works with mocked config
+          import tempfile, yaml, os
+          from agentsystems_toolkit import getModel
+          
+          mock_config = {
+              'model_connections': {
+                  'test-model': {
+                      'hosting_provider': 'anthropic',
+                      'hosting_provider_model_id': 'claude-3-5-sonnet-20241022',
+                      'enabled': True,
+                      'auth': {'method': 'api_key', 'api_key_env': 'TEST_API_KEY'}
+                  }
+              }
+          }
+          
+          with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+              yaml.dump(mock_config, f)
+              config_path = f.name
+          
+          os.environ['AGENTSYSTEMS_CONFIG_PATH'] = config_path
+          os.environ['TEST_API_KEY'] = 'test-key-123'
+          
+          try:
+              llm = getModel('test-model', 'langchain')
+              print(f"✅ Created {type(llm).__name__} successfully")
+          finally:
+              os.unlink(config_path)
+          PY
+
+      - name: Generate lock files for reproducibility
+        run: |
+          echo "# Auto-generated lock file - DO NOT USE IN CI" > requirements-lock.txt
+          echo "# Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> requirements-lock.txt
+          echo "# Python: $(python --version)" >> requirements-lock.txt
+          echo "" >> requirements-lock.txt
+          pip freeze | grep -v "^agentsystems-toolkit" | grep -v "^-e " >> requirements-lock.txt || true
+
+          echo "# Auto-generated lock file - DO NOT USE IN CI" > requirements-dev-lock.txt
+          echo "# Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> requirements-dev-lock.txt
+          echo "# Python: $(python --version)" >> requirements-dev-lock.txt
+          echo "" >> requirements-dev-lock.txt
+          pip freeze >> requirements-dev-lock.txt || true
+
+      - name: Upload lock files as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-lock-files
+          path: |
+            requirements-lock.txt
+            requirements-dev-lock.txt
+          retention-days: 90
+
+      - name: Run tests
+        run: pytest --cov=agentsystems_toolkit --cov-branch --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: agentsystems/agentsystems-toolkit

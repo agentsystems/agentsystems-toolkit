@@ -1,0 +1,400 @@
+name: Release to PyPI
+
+# This workflow automates the release process to PyPI for agentsystems-toolkit
+# Supports both TestPyPI (for testing) and production PyPI releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Release target (testpypi or pypi)'
+        required: true
+        default: 'testpypi'
+        type: choice
+        options:
+          - 'testpypi'
+          - 'pypi'
+      dry_run:
+        description: 'Dry run (build only, no upload)'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      pyproject_version: ${{ steps.pyproject.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for git describe
+
+      - name: Extract version
+        id: version
+        run: |
+          # Extract from pyproject.toml
+          VERSION=$(grep "^version = " pyproject.toml | cut -d'"' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Version: $VERSION"
+
+      - name: Extract pyproject version
+        id: pyproject
+        run: |
+          VERSION=$(grep "^version = " pyproject.toml | cut -d'"' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Verify version consistency
+        run: |
+          if [[ "${{ steps.version.outputs.version }}" != "${{ steps.pyproject.outputs.version }}" ]]; then
+            echo "❌ Version mismatch!"
+            echo "Tag version: ${{ steps.version.outputs.version }}"
+            echo "pyproject.toml: ${{ steps.pyproject.outputs.version }}"
+            exit 1
+          fi
+          echo "✅ Version check passed: ${{ steps.version.outputs.version }}"
+
+      - name: Version format validation
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Safety check 1: Version format validation
+          if [[ "${{ github.event.inputs.target }}" == "pypi" ]]; then
+            # Production release - enforce strict semver (X.Y.Z)
+            if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "❌ ERROR: Production releases must use semantic versioning (X.Y.Z)"
+              echo "   You specified: ${VERSION}"
+              echo "   Valid examples: 0.1.0, 1.0.0, 2.14.5"
+              echo "   Invalid examples: 0.1.0rc1, 0.1.0-rc1, v0.1.0, 0.1, 0.1.0.1"
+              exit 1
+            fi
+          else
+            # TestPyPI - recommend suffix for clarity but don't enforce
+            if [[ ! "${VERSION}" =~ (rc|a|b|dev|test) ]]; then
+              echo "⚠️  WARNING: Consider using a pre-release suffix for TestPyPI"
+              echo "   Examples: 0.1.0rc1, 0.1.0a1, 0.1.0b1, 0.1.0.dev1"
+              echo "   This helps distinguish test releases from production"
+            fi
+          fi
+
+      - name: Check for existing version on PyPI
+        if: github.event.inputs.target == 'pypi'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Check if this version already exists on PyPI
+          echo "🔍 Checking if version ${VERSION} already exists on PyPI..."
+
+          # Use pip index to check if version exists
+          if pip index versions agentsystems-toolkit 2>/dev/null | grep -q "^${VERSION}$"; then
+            echo "❌ ERROR: Version ${VERSION} already exists on PyPI!"
+            echo "   Cannot overwrite existing versions."
+            echo "   Please increment the version in pyproject.toml"
+            exit 1
+          fi
+
+          echo "✅ Version ${VERSION} is available for release"
+
+      - name: Branch protection for production
+        if: github.event.inputs.target == 'pypi'
+        run: |
+          CURRENT_BRANCH="${{ github.ref_name }}"
+
+          # Production releases must be from main branch
+          if [[ "${CURRENT_BRANCH}" != "main" ]]; then
+            echo "❌ ERROR: Production PyPI releases must be from main branch!"
+            echo "   Current branch: ${CURRENT_BRANCH}"
+            echo "   To create a production release:"
+            echo "   1. Merge your changes to main"
+            echo "   2. Run this workflow from main branch"
+            echo "   For testing, use target=testpypi from any branch"
+            exit 1
+          fi
+
+          echo "✅ Branch check passed: releasing from main"
+
+  build:
+    needs: validate-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine pip-licenses
+
+      - name: Generate license attributions
+        run: |
+          echo "🔍 Generating license attributions..."
+
+          # Install ALL dependencies (runtime + dev) for comprehensive license coverage
+          pip install -e .
+          pip install -r requirements-dev.txt
+
+          # Create licenses directory
+          mkdir -p licenses/python
+
+          # Generate dependency list
+          pip freeze --exclude-editable > licenses/python/THIRD_PARTY_REQUIREMENTS.txt
+
+          # Generate license data with full text
+          pip-licenses \
+            --format=json \
+            --with-authors \
+            --with-urls \
+            --with-license-file \
+            --no-license-path \
+            > licenses/python/THIRD_PARTY_LICENSES.json
+
+          # Generate human-readable ATTRIBUTIONS.md
+          python - <<'PY'
+          import json
+          p = "licenses/python/THIRD_PARTY_LICENSES.json"
+          data = json.load(open(p))
+          out = "licenses/python/ATTRIBUTIONS.md"
+          with open(out, "w", encoding="utf-8") as f:
+              f.write("# Third-Party Python Packages\n\n")
+              f.write("This package relies on the third-party Python packages listed below.\n\n")
+              for row in sorted(data, key=lambda r: r["Name"].lower()):
+                  f.write(f"## {row.get('Name','')} {row.get('Version','')}\n")
+                  f.write(f"- License: {row.get('License','Unknown')}\n")
+                  if row.get("URL"): f.write(f"- URL: {row['URL']}\n")
+                  if row.get("Author"): f.write(f"- Author: {row['Author']}\n")
+                  txt = row.get("LicenseText")
+                  if txt and len(txt) < 50000:  # Skip extremely long licenses
+                      f.write("\n<details><summary>License text</summary>\n\n")
+                      f.write("```\n")
+                      f.write(txt)
+                      f.write("\n```\n")
+                      f.write("</details>\n")
+                  f.write("\n")
+          PY
+
+          echo "✅ License attributions generated"
+          echo "Files created:"
+          ls -la licenses/python/
+
+      - name: Build package
+        run: |
+          # Copy license files to package data directory before building
+          cp -r licenses agentsystems_toolkit/
+
+          python -m build
+          echo "📦 Package built successfully"
+          ls -la dist/
+
+      - name: Check package with twine
+        run: |
+          twine check dist/*
+          echo "✅ Package validation passed"
+
+      - name: Security scan - Check for sensitive files
+        run: |
+          echo "🔍 Scanning package contents for sensitive files..."
+
+          # Extract wheel and tarball to temporary directories
+          mkdir -p security-check/wheel security-check/tar
+
+          # Check wheel package
+          echo "Checking wheel package..."
+          cd security-check/wheel
+          unzip -q ../../dist/*.whl
+
+          # Check for .env files
+          if find . -name ".env" -type f | grep -q .; then
+            echo "❌ SECURITY ALERT: Found .env file(s) in wheel package:"
+            find . -name ".env" -type f
+            exit 1
+          fi
+
+          # Check for other sensitive patterns
+          if find . -type f \( -name "*.pem" -o -name "*.key" -o -name "*_rsa" -o -name "*_dsa" -o -name "*_ecdsa" -o -name "*_ed25519" \) | grep -q .; then
+            echo "❌ SECURITY ALERT: Found potential private key files:"
+            find . -type f \( -name "*.pem" -o -name "*.key" -o -name "*_rsa" -o -name "*_dsa" -o -name "*_ecdsa" -o -name "*_ed25519" \)
+            exit 1
+          fi
+
+          cd ../..
+
+          # Check tarball
+          echo "Checking source distribution..."
+          cd security-check/tar
+          tar -xzf ../../dist/*.tar.gz
+
+          # Check for .env files
+          if find . -name ".env" -type f | grep -q .; then
+            echo "❌ SECURITY ALERT: Found .env file(s) in source distribution:"
+            find . -name ".env" -type f
+            exit 1
+          fi
+
+          # Check for other sensitive patterns
+          if find . -type f \( -name "*.pem" -o -name "*.key" -o -name "*_rsa" -o -name "*_dsa" -o -name "*_ecdsa" -o -name "*_ed25519" \) | grep -q .; then
+            echo "❌ SECURITY ALERT: Found potential private key files:"
+            find . -type f \( -name "*.pem" -o -name "*.key" -o -name "*_rsa" -o -name "*_dsa" -o -name "*_ecdsa" -o -name "*_ed25519" \)
+            exit 1
+          fi
+
+          # Check for AWS credentials
+          if grep -r "AKIA[0-9A-Z]\{16\}" . --include="*" 2>/dev/null | grep -v "Binary file"; then
+            echo "❌ SECURITY ALERT: Found potential AWS access keys"
+            exit 1
+          fi
+
+          # Check for generic API tokens (basic pattern)
+          if grep -rE "(api[_-]?key|api[_-]?token|auth[_-]?token|access[_-]?token)\s*=\s*['\"][^'\"]{20,}['\"]" . --include="*" 2>/dev/null | grep -v "Binary file" | grep -v ".example"; then
+            echo "⚠️  WARNING: Found potential API tokens - please verify these are examples only"
+          fi
+
+          cd ../..
+
+          # Clean up
+          rm -rf security-check
+
+          echo "✅ Security scan completed - no sensitive files found"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ needs.validate-version.outputs.version }}
+          path: dist/
+          retention-days: 7
+
+      - name: Run tests
+        run: pytest --cov=agentsystems_toolkit --cov-branch --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: agentsystems/agentsystems-toolkit
+
+  # TestPyPI release
+  release-test:
+    if: ${{ github.event.inputs.dry_run != 'true' && github.event.inputs.target == 'testpypi' }}
+    needs: [validate-version, build]
+    runs-on: ubuntu-latest
+    environment: testpypi  # Requires environment approval if configured
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ needs.validate-version.outputs.version }}
+          path: dist/
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install twine
+        run: pip install twine
+
+      - name: Upload to TestPyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          if [[ -z "$TWINE_PASSWORD" ]]; then
+            echo "❌ TEST_PYPI_API_TOKEN secret not configured"
+            exit 1
+          fi
+
+          twine upload --repository testpypi dist/*
+          echo "✅ Released to TestPyPI"
+          echo "View at: https://test.pypi.org/project/agentsystems-toolkit/${{ needs.validate-version.outputs.version }}/"
+
+      - name: Test installation from TestPyPI
+        run: |
+          python -m venv test-env
+          source test-env/bin/activate
+
+          # Retry installation due to potential propagation delays
+          echo "Installing agentsystems-toolkit==${{ needs.validate-version.outputs.version }} from TestPyPI..."
+          for i in {1..5}; do
+            if pip install --index-url https://test.pypi.org/simple/ \
+                 --extra-index-url https://pypi.org/simple/ \
+                 agentsystems-toolkit==${{ needs.validate-version.outputs.version }}; then
+              echo "✅ Installation successful on attempt $i"
+              break
+            fi
+            if [ $i -eq 5 ]; then
+              echo "❌ Failed to install after 5 attempts"
+              exit 1
+            fi
+            echo "Attempt $i failed, waiting 30s for TestPyPI propagation..."
+            sleep 30
+          done
+
+          # Test basic functionality
+          echo "Testing Python import..."
+          python -c "import agentsystems_toolkit; print(f'Version: {agentsystems_toolkit.__version__}')"
+          
+          echo "✅ All TestPyPI verification tests passed!"
+
+  # Production PyPI release
+  release-prod:
+    if: ${{ github.event.inputs.dry_run != 'true' && github.event.inputs.target == 'pypi' }}
+    needs: [validate-version, build]
+    runs-on: ubuntu-latest
+    environment: pypi  # Requires environment approval
+    permissions:
+      contents: write  # Required to create releases and push tags
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ needs.validate-version.outputs.version }}
+          path: dist/
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install twine
+        run: pip install twine
+
+      - name: Upload to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [[ -z "$TWINE_PASSWORD" ]]; then
+            echo "❌ PYPI_API_TOKEN secret not configured"
+            exit 1
+          fi
+
+          twine upload dist/*
+          echo "✅ Released to PyPI"
+          echo "View at: https://pypi.org/project/agentsystems-toolkit/${{ needs.validate-version.outputs.version }}/"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ needs.validate-version.outputs.version }}"
+
+          # Check if release already exists
+          if gh release view "${TAG}" &>/dev/null; then
+            echo "✅ Release ${TAG} already exists, skipping creation"
+          else
+            echo "📦 Creating release ${TAG}..."
+            gh release create "${TAG}" \
+              --title "${TAG}" \
+              --target ${{ github.sha }} \
+              --notes $'AgentSystems Toolkit ${{ needs.validate-version.outputs.version }}\n\nInstall: pip install agentsystems-toolkit==${{ needs.validate-version.outputs.version }}\n\nPyPI: https://pypi.org/project/agentsystems-toolkit/${{ needs.validate-version.outputs.version }}/' \
+              dist/*
+            echo "✅ Release created successfully"
+          fi
