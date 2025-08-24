@@ -1,5 +1,5 @@
 """Model routing utilities for AgentSystems agents."""
 
-from .router import getModel
+from .router import get_model
 
-__all__ = ["getModel"]
+__all__ = ["get_model"]

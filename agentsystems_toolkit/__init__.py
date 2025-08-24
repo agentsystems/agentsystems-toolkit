@@ -7,6 +7,6 @@ __version__ = (
 )
 
 # Main API exports
-from .models import getModel
+from .models import get_model
 
-__all__ = ["__version__", "getModel"]
+__all__ = ["__version__", "get_model"]

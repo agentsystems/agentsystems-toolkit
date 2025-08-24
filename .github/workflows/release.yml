@@ -339,7 +339,7 @@ jobs:
           # Test basic functionality
           echo "Testing Python import..."
           python -c "import agentsystems_toolkit; print(f'Version: {agentsystems_toolkit.__version__}')"
-          
+
           echo "✅ All TestPyPI verification tests passed!"
 
   # Production PyPI release
