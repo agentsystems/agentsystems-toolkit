@@ -42,9 +42,9 @@ jobs:
         run: |
           pip install -e .[langchain]
           python - <<'PY'
-          # Test that getModel works with mocked config
+          # Test that get_model works with mocked config
           import tempfile, yaml, os
-          from agentsystems_toolkit import getModel
+          from agentsystems_toolkit import get_model
 
           mock_config = {
               'model_connections': {
@@ -65,7 +65,7 @@ jobs:
           os.environ['TEST_API_KEY'] = 'test-key-123'
 
           try:
-              llm = getModel('test-model', 'langchain')
+              llm = get_model('test-model', 'langchain')
               print(f"✅ Created {type(llm).__name__} successfully")
           finally:
               os.unlink(config_path)
