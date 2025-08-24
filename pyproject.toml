@@ -32,6 +32,9 @@ license-files = ["LICENSE"]
 where = ["."]
 include = ["agentsystems_toolkit*"]
 
+[tool.setuptools.package-data]
+agentsystems_toolkit = ["licenses/**/*"]
+
 [build-system]
 requires = ["setuptools>=67", "wheel"]
 build-backend = "setuptools.build_meta"

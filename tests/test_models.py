@@ -7,7 +7,7 @@ import yaml
 
 from agentsystems_toolkit.models.router import (
     _load_model_connection,
-    getModel,
+    get_model,
     validate_model_dependencies,
 )
 
@@ -45,7 +45,7 @@ class TestModelRouter:
     def test_unsupported_framework(self):
         """Test error handling for unsupported frameworks."""
         with pytest.raises(ValueError, match="Framework 'unsupported' not supported"):
-            getModel("claude-sonnet-4", "unsupported")
+            get_model("claude-sonnet-4", "unsupported")
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("os.path.exists")
@@ -112,7 +112,7 @@ class TestLangChainModels:
         mock_file.return_value.read.return_value = yaml.dump(mock_config)
         mock_anthropic.return_value = "mocked_anthropic_model"
 
-        result = getModel("claude-sonnet-4", "langchain")
+        result = get_model("claude-sonnet-4", "langchain")
 
         mock_anthropic.assert_called_once()
         assert result == "mocked_anthropic_model"
