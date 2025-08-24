@@ -1,0 +1,12 @@
+# Development dependencies
+pytest>=7.0
+pytest-cov>=4.0
+black>=23.0
+ruff>=0.1.0
+mypy>=1.5
+
+# Optional framework dependencies for testing
+langchain-core>=0.1.0
+langchain-anthropic>=0.1.0
+langchain-openai>=0.1.0
+langchain-aws>=0.1.0
