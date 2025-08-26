@@ -7,6 +7,7 @@ __version__ = (
 )
 
 # Main API exports
+from . import progress_tracker
 from .models import get_model
 
-__all__ = ["__version__", "get_model"]
+__all__ = ["__version__", "get_model", "progress_tracker"]
