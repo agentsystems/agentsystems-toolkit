@@ -27,36 +27,30 @@ def get_langchain_model(
         ImportError: If required LangChain package not installed
     """
     hosting_provider = connection["hosting_provider"]
-    provider_model_id = connection["hosting_provider_model_id"]
+    hosting_provider_model_id = connection["hosting_provider_model_id"]
     auth = connection.get("auth", {})
 
     # Route to hosting provider-specific implementation
     if hosting_provider == "anthropic":
-        return _create_anthropic_model(provider_model_id, auth, **kwargs)
+        return _create_anthropic_model(hosting_provider_model_id, auth, **kwargs)
 
-    elif hosting_provider == "aws_bedrock":
-        return _create_bedrock_model(provider_model_id, auth, **kwargs)
-
-    elif hosting_provider == "gcp_vertex":
-        return _create_vertex_model(provider_model_id, auth, **kwargs)
+    elif hosting_provider == "amazon_bedrock":
+        return _create_bedrock_model(hosting_provider_model_id, auth, **kwargs)
 
     elif hosting_provider == "openai":
-        return _create_openai_model(provider_model_id, auth, **kwargs)
-
-    elif hosting_provider == "azure_openai":
-        return _create_azure_openai_model(
-            provider_model_id, auth, connection.get("endpoint"), **kwargs
-        )
+        return _create_openai_model(hosting_provider_model_id, auth, **kwargs)
 
     else:
-        providers = "anthropic, aws_bedrock, gcp_vertex, openai, azure_openai"
+        providers = "anthropic, amazon_bedrock, openai"
         raise ValueError(
             f"Hosting provider '{hosting_provider}' not supported for LangChain. "
             f"Supported providers: {providers}"
         )
 
 
-def _create_anthropic_model(model_id: str, auth: dict[str, Any], **kwargs: Any) -> Any:
+def _create_anthropic_model(
+    hosting_provider_model_id: str, auth: dict[str, Any], **kwargs: Any
+) -> Any:
     """Create ChatAnthropic instance."""
     try:
         from langchain_anthropic import ChatAnthropic
@@ -74,10 +68,12 @@ def _create_anthropic_model(model_id: str, auth: dict[str, Any], **kwargs: Any) 
     if not api_key:
         raise ValueError(f"Environment variable '{api_key_env}' not set")
 
-    return ChatAnthropic(model=model_id, api_key=api_key, **kwargs)
+    return ChatAnthropic(model=hosting_provider_model_id, api_key=api_key, **kwargs)
 
 
-def _create_bedrock_model(model_id: str, auth: dict[str, Any], **kwargs: Any) -> Any:
+def _create_bedrock_model(
+    hosting_provider_model_id: str, auth: dict[str, Any], **kwargs: Any
+) -> Any:
     """Create ChatBedrock instance."""
     try:
         from langchain_aws import ChatBedrock
@@ -107,7 +103,7 @@ def _create_bedrock_model(model_id: str, auth: dict[str, Any], **kwargs: Any) ->
         raise ValueError(f"Environment variables not set: {', '.join(missing)}")
 
     return ChatBedrock(
-        model_id=model_id,
+        model_id=hosting_provider_model_id,
         region_name=region,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
@@ -115,42 +111,9 @@ def _create_bedrock_model(model_id: str, auth: dict[str, Any], **kwargs: Any) ->
     )
 
 
-def _create_vertex_model(model_id: str, auth: dict[str, Any], **kwargs: Any) -> Any:
-    """Create ChatVertexAI instance."""
-    try:
-        from langchain_google_vertexai import ChatVertexAI
-    except ImportError:
-        raise ImportError(
-            "langchain-google-vertexai not installed. "
-            "Install with: pip install langchain-google-vertexai"
-        )
-
-    # Extract GCP credentials from auth config
-    service_account_env = auth.get("gcp_service_account_key_env")
-    project_id = auth.get("gcp_project_id")
-    region = auth.get("gcp_region", "us-central1")
-
-    if not service_account_env or not project_id:
-        msg = (
-            "GCP Vertex connection missing "
-            "gcp_service_account_key_env or gcp_project_id"
-        )
-        raise ValueError(msg)
-
-    service_account_key = os.getenv(service_account_env)
-    if not service_account_key:
-        raise ValueError(f"Environment variable '{service_account_env}' not set")
-
-    return ChatVertexAI(
-        model_name=model_id,
-        project=project_id,
-        location=region,
-        credentials=service_account_key,  # May need JSON parsing
-        **kwargs,
-    )
-
-
-def _create_openai_model(model_id: str, auth: dict[str, Any], **kwargs: Any) -> Any:
+def _create_openai_model(
+    hosting_provider_model_id: str, auth: dict[str, Any], **kwargs: Any
+) -> Any:
     """Create ChatOpenAI instance."""
     try:
         from langchain_openai import ChatOpenAI
@@ -168,36 +131,4 @@ def _create_openai_model(model_id: str, auth: dict[str, Any], **kwargs: Any) -> 
     if not api_key:
         raise ValueError(f"Environment variable '{api_key_env}' not set")
 
-    return ChatOpenAI(model=model_id, api_key=api_key, **kwargs)
-
-
-def _create_azure_openai_model(
-    model_id: str, auth: dict[str, Any], endpoint: str | None, **kwargs: Any
-) -> Any:
-    """Create AzureChatOpenAI instance."""
-    try:
-        from langchain_openai import AzureChatOpenAI
-    except ImportError:
-        raise ImportError(
-            "langchain-openai not installed. "
-            "Install with: pip install langchain-openai"
-        )
-
-    api_key_env = auth.get("api_key_env")
-    if not api_key_env:
-        raise ValueError("Azure OpenAI connection missing api_key_env")
-
-    if not endpoint:
-        raise ValueError("Azure OpenAI connection missing endpoint")
-
-    api_key = os.getenv(api_key_env)
-    if not api_key:
-        raise ValueError(f"Environment variable '{api_key_env}' not set")
-
-    return AzureChatOpenAI(
-        model=model_id,
-        api_key=api_key,
-        azure_endpoint=endpoint,
-        api_version="2024-02-01",  # Could be configurable
-        **kwargs,
-    )
+    return ChatOpenAI(model=hosting_provider_model_id, api_key=api_key, **kwargs)
