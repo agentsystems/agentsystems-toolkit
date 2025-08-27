@@ -85,21 +85,27 @@ def _create_bedrock_model(
     # Extract AWS credentials from auth config
     access_key_env = auth.get("aws_access_key_env")
     secret_key_env = auth.get("aws_secret_key_env")
-    region = auth.get("aws_region", "us-east-1")
+    region_env = auth.get("aws_region")
 
-    if not access_key_env or not secret_key_env:
-        msg = "AWS Bedrock connection missing aws_access_key_env or aws_secret_key_env"
+    if not access_key_env or not secret_key_env or not region_env:
+        msg = (
+            "AWS Bedrock connection missing aws_access_key_env, "
+            "aws_secret_key_env, or aws_region"
+        )
         raise ValueError(msg)
 
     access_key = os.getenv(access_key_env)
     secret_key = os.getenv(secret_key_env)
+    region = os.getenv(region_env)
 
-    if not access_key or not secret_key:
+    if not access_key or not secret_key or not region:
         missing = []
         if not access_key:
             missing.append(access_key_env)
         if not secret_key:
             missing.append(secret_key_env)
+        if not region:
+            missing.append(region_env)
         raise ValueError(f"Environment variables not set: {', '.join(missing)}")
 
     return ChatBedrock(
