@@ -161,7 +161,8 @@ def _create_ollama_model(
             "Install with: pip install langchain-ollama"
         )
 
-    base_url = auth.get("base_url", "http://localhost:11434")
+    base_url_env = auth.get("base_url")
+    base_url = os.getenv(base_url_env) if base_url_env else "http://localhost:11434"
     api_key_env = auth.get("api_key_env")
 
     # Build client kwargs for optional authentication
