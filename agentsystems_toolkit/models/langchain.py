@@ -86,6 +86,7 @@ def _create_bedrock_model(
     access_key_env = auth.get("aws_access_key_env")
     secret_key_env = auth.get("aws_secret_key_env")
     region_env = auth.get("aws_region")
+    region_prefix = auth.get("region_prefix")
 
     if not access_key_env or not secret_key_env or not region_env:
         msg = (
@@ -108,8 +109,13 @@ def _create_bedrock_model(
             missing.append(region_env)
         raise ValueError(f"Environment variables not set: {', '.join(missing)}")
 
+    # Apply region prefix to model ID if specified
+    final_model_id = hosting_provider_model_id
+    if region_prefix:
+        final_model_id = f"{region_prefix}.{hosting_provider_model_id}"
+
     return ChatBedrock(
-        model_id=hosting_provider_model_id,
+        model_id=final_model_id,
         region_name=region,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
