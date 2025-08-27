@@ -1,6 +1,6 @@
 [project]
 name = "agentsystems-toolkit"
-version = "0.1.4"
+version = "0.1.5"
 description = "Development toolkit for building AgentSystems agents"
 readme = "README.md"
 authors = [ { name = "AgentSystems", email = "support@agentsystems.ai" } ]
@@ -17,7 +17,8 @@ langchain = [
     "langchain-core>=0.1.0",
     "langchain-anthropic>=0.1.0",
     "langchain-openai>=0.1.0",
-    "langchain-aws>=0.1.0"
+    "langchain-aws>=0.1.0",
+    "langchain-ollama>=0.1.0"
 ]
 dev = [
     "pytest>=7.0",
