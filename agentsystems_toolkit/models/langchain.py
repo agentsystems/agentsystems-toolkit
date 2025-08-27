@@ -40,8 +40,11 @@ def get_langchain_model(
     elif hosting_provider == "openai":
         return _create_openai_model(hosting_provider_model_id, auth, **kwargs)
 
+    elif hosting_provider == "ollama":
+        return _create_ollama_model(hosting_provider_model_id, auth, **kwargs)
+
     else:
-        providers = "anthropic, amazon_bedrock, openai"
+        providers = "anthropic, amazon_bedrock, openai, ollama"
         raise ValueError(
             f"Hosting provider '{hosting_provider}' not supported for LangChain. "
             f"Supported providers: {providers}"
@@ -144,3 +147,33 @@ def _create_openai_model(
         raise ValueError(f"Environment variable '{api_key_env}' not set")
 
     return ChatOpenAI(model=hosting_provider_model_id, api_key=api_key, **kwargs)
+
+
+def _create_ollama_model(
+    hosting_provider_model_id: str, auth: dict[str, Any], **kwargs: Any
+) -> Any:
+    """Create ChatOllama instance with optional authentication."""
+    try:
+        from langchain_ollama import ChatOllama
+    except ImportError:
+        raise ImportError(
+            "langchain-ollama not installed. "
+            "Install with: pip install langchain-ollama"
+        )
+
+    base_url = auth.get("base_url", "http://localhost:11434")
+    api_key_env = auth.get("api_key_env")
+
+    # Build client kwargs for optional authentication
+    client_kwargs = {}
+    if api_key_env:
+        api_key = os.getenv(api_key_env)
+        if api_key:
+            client_kwargs["headers"] = {"Authorization": f"Bearer {api_key}"}
+
+    return ChatOllama(
+        model=hosting_provider_model_id,
+        base_url=base_url,
+        client_kwargs=client_kwargs if client_kwargs else None,
+        **kwargs,
+    )
