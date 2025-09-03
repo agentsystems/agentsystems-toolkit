@@ -8,7 +8,7 @@
 
 > This is the **development toolkit** for AgentSystems. See the [main repository](https://github.com/agentsystems/agentsystems) for platform overview and documentation.
 
-Development toolkit for building AgentSystems agents with model routing, progress tracking, and LangChain integration.
+Development toolkit for building AgentSystems agents with model routing, progress tracking, and agent framework integration.
 
 ## Features
 
