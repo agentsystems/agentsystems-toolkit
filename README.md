@@ -3,7 +3,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/agentsystems/agentsystems?style=flat-square&logo=github)](https://github.com/agentsystems/agentsystems/stargazers)
 
 > [!NOTE]
-> **Public Beta** - Part of the AgentSystems platform. Official public launch September 15, 2025.
+> **Pre-Release Software** - AgentSystems is in active development. Join our [Discord](https://discord.com/invite/JsxDxQ5zfV) for updates and early access.
 > ⭐ [**Star the main repository**](https://github.com/agentsystems/agentsystems) to show your support!
 
 > This is the **development toolkit** for AgentSystems. See the [main repository](https://github.com/agentsystems/agentsystems) for platform overview and documentation.
